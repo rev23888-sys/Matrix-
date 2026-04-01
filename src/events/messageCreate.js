@@ -1,8 +1,3 @@
-
-
-
-
-
 import { Events } from 'discord.js';
 import { logger } from '../utils/logger.js';
 import { getLevelingConfig, getUserLevelData } from '../services/leveling.js';
@@ -16,101 +11,109 @@ export default {
   name: Events.MessageCreate,
   async execute(message, client) {
     try {
-      
       if (message.author.bot || !message.guild) return;
 
+      // 🔥 PREFIX SYSTEM
+      const prefix = process.env.PREFIX || "&";
+
+      if (message.content.startsWith(prefix)) {
+        const args = message.content.slice(prefix.length).trim().split(/ +/);
+        const cmd = args.shift()?.toLowerCase();
+
+        // ===== HELP =====
+        if (cmd === "help") {
+          return message.reply(`
+📚 **Matrix Commands**
+
+💰 Economy: &bal, &work  
+😂 Fun: &meme, &joke  
+🎮 Games: &dice, &rps  
+⚙️ Utility: &ping  
+
+Prefix = ${prefix}
+          `);
+        }
+
+        // ===== PING =====
+        if (cmd === "ping") {
+          return message.reply(`🏓 ${client.ws.ping}ms`);
+        }
+
+        // ===== DICE =====
+        if (cmd === "dice") {
+          return message.reply(`🎲 ${Math.floor(Math.random() * 6) + 1}`);
+        }
+
+        // ===== RPS =====
+        if (cmd === "rps") {
+          const choices = ["rock", "paper", "scissors"];
+          const bot = choices[Math.floor(Math.random() * 3)];
+          const user = args[0];
+
+          if (!choices.includes(user)) {
+            return message.reply("Use: &rps rock/paper/scissors");
+          }
+
+          if (user === bot) return message.reply(`Tie! I chose ${bot}`);
+          if (
+            (user === "rock" && bot === "scissors") ||
+            (user === "paper" && bot === "rock") ||
+            (user === "scissors" && bot === "paper")
+          ) return message.reply(`You win! I chose ${bot}`);
+
+          return message.reply(`I win! I chose ${bot}`);
+        }
+
+        // ===== JOKE =====
+        if (cmd === "joke") {
+          return message.reply("😂 Dev life = bugs");
+        }
+
+        // ===== MEME =====
+        if (cmd === "meme") {
+          return message.reply("😂 Meme system coming soon");
+        }
+      }
+
+      // ✅ KEEP YOUR LEVEL SYSTEM
       await handleLeveling(message, client);
+
     } catch (error) {
       logger.error('Error in messageCreate event:', error);
     }
   }
 };
 
-
-
-
-
-
-
-
 async function handleLeveling(message, client) {
   try {
     const rateLimitKey = `xp-event:${message.guild.id}:${message.author.id}`;
-    const canProcess = await checkRateLimit(rateLimitKey, MESSAGE_XP_RATE_LIMIT_ATTEMPTS, MESSAGE_XP_RATE_LIMIT_WINDOW_MS);
-    if (!canProcess) {
-      return;
-    }
+    const canProcess = await checkRateLimit(
+      rateLimitKey,
+      MESSAGE_XP_RATE_LIMIT_ATTEMPTS,
+      MESSAGE_XP_RATE_LIMIT_WINDOW_MS
+    );
+    if (!canProcess) return;
 
     const levelingConfig = await getLevelingConfig(client, message.guild.id);
-    
-    if (!levelingConfig?.enabled) {
-      return;
-    }
-
-    
-    if (levelingConfig.ignoredChannels?.includes(message.channel.id)) {
-      return;
-    }
-
-    
-    if (levelingConfig.ignoredRoles?.length > 0) {
-      const member = await message.guild.members.fetch(message.author.id).catch(() => {
-        return null;
-      });
-      if (member && member.roles.cache.some(role => levelingConfig.ignoredRoles.includes(role.id))) {
-        return;
-      }
-    }
-
-    
-    if (levelingConfig.blacklistedUsers?.includes(message.author.id)) {
-      return;
-    }
-
-    
-    if (!message.content || message.content.trim().length === 0) {
-      return;
-    }
+    if (!levelingConfig?.enabled) return;
 
     const userData = await getUserLevelData(client, message.guild.id, message.author.id);
-    
-    
+
     const cooldownTime = levelingConfig.xpCooldown || 60;
     const now = Date.now();
-    const timeSinceLastMessage = now - (userData.lastMessage || 0);
-    
-    
-    if (timeSinceLastMessage < cooldownTime * 1000) {
-      return;
-    }
 
-    
-    const minXP = levelingConfig.xpRange?.min || levelingConfig.xpPerMessage?.min || 15;
-    const maxXP = levelingConfig.xpRange?.max || levelingConfig.xpPerMessage?.max || 25;
+    if (now - (userData.lastMessage || 0) < cooldownTime * 1000) return;
 
-    
-    const safeMinXP = Math.max(1, minXP);
-    const safeMaxXP = Math.max(safeMinXP, maxXP);
+    const xpToGive = Math.floor(Math.random() * 10) + 5;
 
-    
-    const xpToGive = Math.floor(Math.random() * (safeMaxXP - safeMinXP + 1)) + safeMinXP;
+    const result = await addXp(client, message.guild, message.member, xpToGive);
 
-    
-    let finalXP = xpToGive;
-    if (levelingConfig.xpMultiplier && levelingConfig.xpMultiplier > 1) {
-      finalXP = Math.floor(finalXP * levelingConfig.xpMultiplier);
-    }
-
-    
-    const result = await addXp(client, message.guild, message.member, finalXP);
-    
     if (result.success && result.leveledUp) {
-      logger.info(
-        `${message.author.tag} leveled up to level ${result.level} in ${message.guild.name}`
-      );
+      message.channel.send(`🎉 ${message.author} leveled up to ${result.level}!`);
     }
+
   } catch (error) {
-    logger.error('Error handling leveling for message:', error);
+    logger.error('Error handling leveling:', error);
   }
 }
 
